@@ -1,4 +1,5 @@
 import * as child_process from 'child_process';
+import * as fs from 'fs';
 import * as net from 'net';
 import { fileSys } from "./file-sys.lib";
 import { setting } from "./setting";
@@ -12,7 +13,7 @@ const tryCheckConnectionTimes = 6;
 const ip = fileSys.readFileSyncWithDefaultStr('../ip.txt', 'localhost');
 const phindowsPath = fileSys.readFileSyncWithDefaultStr('../phindows-path.txt', String.raw`C:\Users\FATCHHC6\Desktop\瑞薩機器軟體\PHINDOWS\PHINDOWS.EXE`);
 const ffftpPath = fileSys.readFileSyncWithDefaultStr('../ffftp-path.txt', String.raw`C:\Users\FATCHHC6\Desktop\瑞薩機器軟體\FFFTP\FFFTP.exe`);
-
+const dt_csvPath = '../typedata/data_dt.csv';
 const checkConnectionT = 5000;
 // connectToMain();
 setInterval(connectToMain, checkConnectionT);
@@ -33,10 +34,36 @@ function connectToMain() {
     socket.on('connect', () => {
         isConnected = true;
         console.log(`connected to ${serverName}.`);
-
         socket.on('data', (data: Buffer) => {
             let dataStr = data.toString();
             console.log(dataStr);
+            if (dataStr.slice(0, 15) === 'get_data-dt.csv') {
+                execFile('./exec/get_data_dt.exe'
+                ).then(() =>
+                    new Promise((res) => setTimeout(res, 1000 * 10))
+                ).then(() => {
+                    if (fs.existsSync(dt_csvPath)) {
+                        console.log(`傳送檔案到比對系統`)
+                        const readStream = fs.createReadStream(dt_csvPath);
+                        readStream.on('open', () => {
+                            console.log('Sending file...');
+                            readStream.pipe(socket);
+                        });
+                
+                        readStream.on('error', (err) => {
+                            console.error('Error reading file:', err);
+                        });
+                
+                        socket.on('end', () => {
+                            console.log('File sent successfully.');
+                            socket.end();
+                        });           
+                    } else {
+                        console.log(`${dt_csvPath}不存在`)
+                    }
+                    }
+                )
+            }
             if (dataStr.slice(0, 18) === 'switch-adpater-obj') {
                 let json = dataStr.slice(18);
                 let switchAdapterObj: SwitchAdapterObj = JSON.parse(json);
@@ -289,7 +316,4 @@ function testConnectionP(ip: string): Promise<boolean> {
         return isAnyPingSucc;
     })
 }
-
-
-
 // setTimeout(() => { getOpeningDeviceAdapaterNamesP(['31LD001','31LD002']).then(console.log) }, 1000)

@@ -13,7 +13,7 @@ file.Close
 
 ' 創建 IE 物件
 Set IE = CreateObject("InternetExplorer.Application")
-IE.Visible = True
+IE.Visible = False
 
 ' 導航到從 txt 檔讀取的網址
 IE.Navigate url

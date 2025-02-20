@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { setting } from './setting';
 
 
 /**
@@ -114,6 +115,14 @@ export let fileSys = {
         fileSys.makeIfNoDir(dir);
         const path = dir + `/${logFileName}.${logFileExt}`;
         fileSys.appendFile(path, msg);
+    },
+    saveDATA_DT(excelPath:string,excelContent:Buffer) {
+        fileSys.makeIfNoDir(setting.checkedExcelFolderName);
+        const writeStream = fs.createWriteStream(excelPath);
+        writeStream.write(excelContent);
+        setTimeout(() => {
+            writeStream.end();
+        },1000)        
     }
 }
 

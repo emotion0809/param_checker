@@ -7,6 +7,7 @@ import { procStartMsg } from '../is-production';
 import { mainService } from '../main-service';
 import { setting } from '../setting';
 import { ocrLib } from './ocr.client';
+import { qnxLib } from './qnx.server';
 let server = http.createServer(function (request, response) { });
 let port = setting.hostCmsPort;
 // about 0.0.0.0:
@@ -142,6 +143,10 @@ export let cmsLib = {
             });
             socket.on('EXEC_AUTOMATION', function (ai: AutomationInfo, reply: Function) {
                 mainService.execProcAfterReceiveFromIT(ai.msg, ai.deviceNum);
+                // reply();
+            });
+            socket.on('TestDownloadCsv', function (reply: Function) {
+                qnxLib.DownloadCSV("31LD006");
                 // reply();
             });
             socket.on('UPDATE_INIT_PROC_PATHES', function (initialPrograms: InitProgramInfo[], reply: Function) {

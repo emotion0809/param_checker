@@ -1,9 +1,12 @@
 import * as net from 'net';
+
 import { setting } from '../setting';
 import { cmsLib } from "./cms.server";
 import { mainService } from '../main-service';
 import { mainData } from '../data/main.data';
 import { mainState } from '../data/main.state';
+import { fileSys } from '../file-sys.lib';
+import { handleReceivedCsv } from "../cs/main-no-tcpip-check-param.server";
 
 class SwitchAdapterObj {
     allDeviceNumbers = mainData.webSets[mainState.webSetIndex].webUrlObjs.map(obj => obj.deviceNumber);
@@ -12,11 +15,27 @@ class SwitchAdapterObj {
 }
 
 export let qnxLib = {
+    CsvBuffer: Buffer.alloc(0),
     isSocketAlive: false,
     socket: null as net.Socket | null,
     isUploadingRecipe: false,
+    isDownloadingCsv: false,
     uploadRecipeRes: (msg: string) => { },
     uploadRecipeRej: (msg: string) => { },
+    DownloadCSV(deviceNum: string) {
+        if (!qnxLib.isSocketAlive || !qnxLib.socket) {
+            const msg = `未與Qnx連線，下載Csv下載Csv作業取消`;
+            mainService.logBothErr(msg);
+            return;
+        }
+        if (qnxLib.isDownloadingCsv) {
+            const msg = 'QnxDownloadCsv中，請稍後再重新嘗試';
+            mainService.logBothErr(msg);
+            return;
+        }
+        qnxLib.socket.write('get_data_dt.csv' + JSON.stringify(new SwitchAdapterObj("XXX",deviceNum)));
+
+    },
     tellUploadRecipeInfoP(recipeName: string, deviceNum: string): { isTold: boolean, prom: Promise<void> } {
         let returnObj = {
             isTold: false,
@@ -49,6 +68,7 @@ export let qnxLib = {
         return returnObj;
     },
     serve() {
+        let excelContent = Buffer.alloc(0)
         let port = setting.listenQnxPort;
         //create server
         let server = net.createServer();
@@ -66,7 +86,6 @@ export let qnxLib = {
             cmsLib.sendDataLog(succMsg);
             qnxLib.socket = socket;
             qnxLib.isSocketAlive = true;
-
             //write
             //  socket.write('Hello, client.');
 
@@ -74,6 +93,21 @@ export let qnxLib = {
             socket.on('data', function (data: Buffer) {
                 let dataStr = data.toString();
                 console.log(dataStr);
+                if ('DownloadCSV_End' === dataStr) {
+                    mainService.logBoth("結束下載data_dt的資料");
+                    handleReceivedCsv("data_dt.csv", excelContent);
+                    qnxLib.isDownloadingCsv = false;
+                }
+                if (qnxLib.isDownloadingCsv) {
+                    mainService.logBoth("取得Csv檔的資料")
+                    excelContent = Buffer.concat([excelContent, data]);
+                }
+                if ('DownloadCSV_Start' === dataStr) {
+                    mainService.logBoth("開始下載data_dt的資料");
+                    excelContent = Buffer.alloc(0);
+                    qnxLib.isDownloadingCsv = true;
+                }
+                
                 if ('finish-uploading-recipe' === dataStr) {
                     qnxLib.uploadRecipeRes('Qnx端上傳Recipe完成');
                 }

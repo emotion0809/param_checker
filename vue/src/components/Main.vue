@@ -58,6 +58,9 @@
           <button v-if="isRunning" @click="stop">STOP</button>
           <button v-else @click="auto">AUTO</button>
         </div>
+        <div class="centerV" style="margin-top: 50px">
+          <button @click="Test">Test</button>
+        </div>
       </div>
       <div class="pageBox">
         <!-- <transition name="fade" mode="out-in"> -->
@@ -237,6 +240,9 @@ export default Vue.extend({
     },
     stop() {
       (this.$refs.sites as any).stop();
+    },
+    Test() {
+      socketLib.emitEvent('TestDownloadCsv');
     },
     clickSideOpt(fName: any) {
       if (this.isLockInKvmPage && fName !== '機台畫面') {

@@ -6,6 +6,8 @@ import { setting } from "../setting";
 import { cmsLib } from './cms.server';
 import { mainState } from '../data/main.state';
 import { mainService } from '../main-service';
+import * as fs from 'fs';
+
 
 // 功能: 1.接收excel檔 2.紀錄比對結果
 export function hostParamCheckServer() {
@@ -47,7 +49,7 @@ export function hostParamCheckServer() {
                 excelName = dataStr.slice(11);
             }
             else if (dataStr.slice(0, 9) === 'excel-end') {
-                handleReceivedCsv(excelName, excelContent);
+                //handleReceivedCsv(excelName, excelContent);
             }
             else {
                 excelContent += dataStr;
@@ -77,14 +79,23 @@ function appendMachineNum(name: string) {
     return currDeviceNum === '' ? name : (name + '_' + currDeviceNum);
 }
 
-export function handleReceivedCsv(excelName: string, excelContent: string) {
+export function handleReceivedCsv(excelName: string, excelContent: Buffer) {
+    mainService.logBoth(excelContent.toString());
     let excelPath: string = 'AllData' + '\\' + excelName;;
 
-    excelPath = fileSys.saveExcelFile(excelPath, excelContent);
+    fileSys.makeIfNoDir(setting.checkedExcelFolderName);
+    const writeStream = fs.createWriteStream(excelPath);
+    writeStream.write(excelContent);
+    writeStream.end(); 
+    writeStream.on('finish', () => {
+        mainService.logBoth(`寫入完成：${excelPath}`);
+        processFile(excelPath);
+    });    
+}
 
+function processFile(excelPath: string) {
     const startComparingMsg = `接收到Execl檔，已存入${excelPath}，將對其進行參數比對`;
     mainService.logBoth(startComparingMsg);
-
     paramCheckerLib[excelPath.slice(-4) === 'xlsx' ? 'readXlsxP' : 'readCsvP'](excelPath).then(ws => {
 
         let rows: any[][] = [];
@@ -118,6 +129,7 @@ export function handleReceivedCsv(excelName: string, excelContent: string) {
         else {
             stringToPrepend += `檢驗結果,不合格\r\n訊息,${failMsg}\r\n`;
             fileSys.simpleWrite(newFilePath, stringToPrepend + excelContent);
-        }
+            }
+        
     })
 }

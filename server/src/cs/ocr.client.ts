@@ -2,6 +2,7 @@ import * as net from 'net';
 import { mainState } from '../data/main.state';
 import { mainService } from '../main-service';
 import { setting } from '../setting';
+import { qnxLib } from './qnx.server';
 
 export const ocrLib = {
     sockets: [null, null, null, null] as (null | net.Socket)[],
@@ -33,7 +34,11 @@ export const ocrLib = {
                         if (task.canTriggerLoadCsvProcedure) {
                             task.screenControl(true); //會不會剛好被解屏，應該不會，因為只有IT的會解，但是離鎖有相當時間差
                             mainState.kvmTaskManeger.markWithLoadingCsvTask(task);
-                            mainState.kvmTaskManeger.enterLoadCsvQue(task);
+                            mainState.kvmTaskManeger.enterLoadCsvQue(task)
+                            new Promise((res) => setTimeout(res, 1000 * 10)).then(() => {
+                                mainService.logBoth("向QNX伺服器發送下載Csv的資料");
+                                qnxLib.DownloadCSV(task.deviceNum);
+                            });        
                         }
                         else {
                             mainService.logBoth(`OCR${ocrNum}於位置${index}偵測到待清除之機台${task.deviceNum ? task.deviceNum : ''}畫面，不觸發流程`);

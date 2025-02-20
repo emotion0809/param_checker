@@ -15,6 +15,7 @@ const phindowsPath = fileSys.readFileSyncWithDefaultStr('../phindows-path.txt', 
 const ffftpPath = fileSys.readFileSyncWithDefaultStr('../ffftp-path.txt', String.raw`C:\Users\FATCHHC6\Desktop\瑞薩機器軟體\FFFTP\FFFTP.exe`);
 const dt_csvPath = '../typedata/data_dt.csv';
 const checkConnectionT = 5000;
+let hadDownloaded = false;
 // connectToMain();
 setInterval(connectToMain, checkConnectionT);
 
@@ -27,6 +28,7 @@ setInterval(connectToMain, checkConnectionT);
 
 function connectToMain() {
     if (isConnected) return;
+    
     const serverName = 'HHC ACSI';
     let port = setting.listenQnxPort;
     console.log(`Trying to connect to ${serverName} where port=${port} and ip=${ip}`);
@@ -37,32 +39,79 @@ function connectToMain() {
         socket.on('data', (data: Buffer) => {
             let dataStr = data.toString();
             console.log(dataStr);
-            if (dataStr.slice(0, 15) === 'get_data-dt.csv') {
-                execFile('./exec/get_data_dt.exe'
-                ).then(() =>
-                    new Promise((res) => setTimeout(res, 1000 * 10))
-                ).then(() => {
-                    if (fs.existsSync(dt_csvPath)) {
-                        console.log(`傳送檔案到比對系統`)
-                        const readStream = fs.createReadStream(dt_csvPath);
-                        readStream.on('open', () => {
-                            console.log('Sending file...');
-                            readStream.pipe(socket);
-                        });
-                
-                        readStream.on('error', (err) => {
-                            console.error('Error reading file:', err);
-                        });
-                
-                        socket.on('end', () => {
-                            console.log('File sent successfully.');
-                            socket.end();
-                        });           
-                    } else {
-                        console.log(`${dt_csvPath}不存在`)
+            if (dataStr.slice(0, 15) === 'get_data_dt.csv') {
+                let json = dataStr.slice(15);
+                let switchAdapterObj: SwitchAdapterObj = JSON.parse(json);
+                let deviceNum = switchAdapterObj.deviceNumber;
+                getOpeningDeviceAdapaterNamesP(switchAdapterObj.allDeviceNumbers).then(deviceNumbersToDisable => {
+                    if (!isOnlyResponseToServer) {
+                        new Promise<void>((res, rej) => {
+                            if (setting.isSwithchingNetAdapter) {
+                                let msDelayToCloseAdapter = 4000;
+                                let pAll = [new Promise(res => setTimeout(res, msDelayToCloseAdapter))];
+                                deviceNumbersToDisable.forEach(devivceNumberFromPs => {
+                                    console.log('關閉已開啟之網路介面卡:' + devivceNumberFromPs);
+                                    pAll.push(switchNetAdapter(devivceNumberFromPs, false));
+                                })
+                                Promise.all(pAll).then(() => res()).catch(rej);
+                            }
+                            else res();
+                            //開啟adapter
+                        }).then(() => {
+                            if (setting.isSwithchingNetAdapter) {
+                                let msDelayToOpenAdapter = 20 * 1000;
+                                let pAll = [new Promise(res => setTimeout(res, msDelayToOpenAdapter)), switchNetAdapter(deviceNum, true)];
+                                console.log(`開啟${deviceNum}網路介面卡，請等候約20秒才會進行上傳Recipe作業`);
+                                return Promise.all(pAll).then();
+                            }
+                            //檢查連線
+                        }).then(() => {
+                            return checkConnectionLoopP(deviceNum, tryCheckConnectionTimes).then(isConnected => {
+                                if (isConnected) {
+                                    console.log(`${deviceNum}已正常連接，將進行Csv下載流程`);
+                                }
+                                else {
+                                    console.log(`${deviceNum}未正常連接，取消行Csv下載流程`);
+                                    return Promise.reject();
+                                }
+                            })
+                        }).then(() =>
+                            execFile('./exec/get_data_dt.exe'
+                        )).then(() =>
+                            new Promise((res) => setTimeout(res, 1000 * 25))
+                        ).then(() => {
+                            if (fs.existsSync(dt_csvPath)) {
+                                console.log(`傳送檔案到比對系統`)
+                                const readStream = fs.createReadStream(dt_csvPath);
+                                readStream.on('open', () => {
+                                    console.log('Sending file...');
+                                    socket.write("DownloadCSV_Start");
+                                    readStream.pipe(socket);
+                                    hadDownloaded = true;
+                                });
+                                readStream.on('error', (err) => {
+                                    console.error('Error reading file:', err);
+                                });
+                                readStream.on('end', () => {
+                                    socket.write("DownloadCSV_End");
+                                    console.log('File sent successfully.');
+                                    setTimeout(() => { // 延遲 500ms，確保 TCP 緩衝區已經清空
+                                        if (socket.writable) {
+                                            console.log('Sending DownloadCSV_End signal...');
+                                            socket.write("DownloadCSV_End");
+                                        } else {
+                                            console.log('Socket is not writable. Retrying...');
+                                            reconnectAndSendEndSignal();
+                                        }
+                                    }, 500);
+                                });
+                                
+                            } else {
+                                console.log(`${dt_csvPath}不存在`)
+                            }
+                        })
                     }
-                    }
-                )
+                })
             }
             if (dataStr.slice(0, 18) === 'switch-adpater-obj') {
                 let json = dataStr.slice(18);
@@ -141,6 +190,18 @@ function connectToMain() {
         console.log("Error: " + err.message);
         console.log("try to reconnect within 10s.")
     })
+}
+
+function reconnectAndSendEndSignal() {
+    setTimeout(() => { // 延遲 500ms，確保 TCP 緩衝區已經清空
+        if (socket.writable) {
+            console.log('Sending DownloadCSV_End signal...');
+            socket.write("DownloadCSV_End");
+        } else {
+            console.log('Socket is not writable. Retrying...');
+            reconnectAndSendEndSignal();
+        }
+    }, 500);
 }
 
 let isConnected = false;
